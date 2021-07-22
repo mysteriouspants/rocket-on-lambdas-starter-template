@@ -1,0 +1,13 @@
+[package]
+name = "api-lambda"
+version = "0.1.0"
+edition = "2018"
+publish = false
+
+[[bin]]
+name = "bootstrap"
+path = "src/main.rs"
+
+[dependencies]
+lambda-web = { version = "0.1", features=[ "rocket05" ] }
+rocket = { version = "0.5.0-rc.1", features = [ "json" ] }
