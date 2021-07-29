@@ -13,19 +13,20 @@ export interface CustomStackProps {
   domainName: string,
   wwwRecordName: string,
   apiRecordName: string,
+  redirects?: boolean,
+  zone: route53.IHostedZone,
+  cert: acm.ICertificate,
 }
 
 export class CdkStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props: cdk.StackProps & CustomStackProps) {
+  constructor(
+    scope: cdk.Construct, id: string, props: cdk.StackProps & CustomStackProps
+  ) {
     super(scope, id, props);
 
-    const { wwwRecordName, apiRecordName, domainName } = props;
-    const zone = route53.HostedZone.fromLookup(this, 'HostedZone', { domainName });
-    const cert = new acm.Certificate(this, 'DomainCertificate', {
-      domainName,
-      validation: acm.CertificateValidation.fromDns(zone),
-      subjectAlternativeNames: [`*.${domainName}`],
-    });
+    const {
+      wwwRecordName, apiRecordName, domainName, zone, cert,
+    } = props;
 
     const rustVersion = '1.53';
     const target = 'x86_64-unknown-linux-musl';
@@ -41,7 +42,6 @@ export class CdkStack extends cdk.Stack {
           image: cdk.DockerImage.fromRegistry(`rust:${rustVersion}-slim`),
         }
       }),
-      functionName: domainName.split('.')[0] + '-api',
       handler: 'main',
       runtime: lambda.Runtime.PROVIDED_AL2,
       logRetention: awslogs.RetentionDays.ONE_MONTH,
@@ -82,19 +82,21 @@ export class CdkStack extends cdk.Stack {
       )
     });
 
-    const redirectBucket = new s3.Bucket(this, 'RedirectBucket', {
-      bucketName: domainName,
-      websiteRedirect: { hostName: `${wwwRecordName}.${domainName}` },
-      autoDeleteObjects: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
+    if (props.redirects === true) {
+      const redirectBucket = new s3.Bucket(this, 'RedirectBucket', {
+        bucketName: domainName,
+        websiteRedirect: { hostName: `${wwwRecordName}.${domainName}` },
+        autoDeleteObjects: true,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      });
 
-    new route53.ARecord(this, `RedirectBucketARecord`, {
-      zone, recordName: domainName,
-      target: route53.RecordTarget.fromAlias(
-        new route53Targets.BucketWebsiteTarget(redirectBucket)
-      ),
-    });
+      new route53.ARecord(this, `RedirectBucketARecord`, {
+        zone, recordName: domainName,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.BucketWebsiteTarget(redirectBucket)
+        ),
+      });
+    }
 
     const websiteBucket = new s3.Bucket(this, 'ReactWebsiteBucket', {
       bucketName: [wwwRecordName, domainName].join('.'),
